@@ -1,0 +1,167 @@
+[
+  {
+    "id": 1,
+    "text": "What does AI stand for?",
+    "options": {
+      "A": "Artificial Intelligence",
+      "B": "Automated Intelligence",
+      "C": "Advanced Internet",
+      "D": "Applied Informatics"
+    },
+    "correct_answer": "A"
+  },
+  {
+    "id": 2,
+    "text": "Which of the following is a type of machine learning?",
+    "options": {
+      "A": "Supervised Learning",
+      "B": "Manual Learning",
+      "C": "Static Learning",
+      "D": "Passive Learning"
+    },
+    "correct_answer": "A"
+  },
+  {
+    "id": 3,
+    "text": "Who is considered the father of Artificial Intelligence?",
+    "options": {
+      "A": "Alan Turing",
+      "B": "John McCarthy",
+      "C": "Marvin Minsky",
+      "D": "Geoffrey Hinton"
+    },
+    "correct_answer": "B"
+  },
+  {
+    "id": 4,
+    "text": "What is the Turing Test used for?",
+    "options": {
+      "A": "Measuring computer speed",
+      "B": "Testing network security",
+      "C": "Evaluating machine intelligence",
+      "D": "Checking memory capacity"
+    },
+    "correct_answer": "C"
+  },
+  {
+    "id": 5,
+    "text": "Which language is commonly used for AI development?",
+    "options": {
+      "A": "HTML",
+      "B": "CSS",
+      "C": "Python",
+      "D": "SQL"
+    },
+    "correct_answer": "C"
+  },
+  {
+    "id": 6,
+    "text": "What does NLP stand for?",
+    "options": {
+      "A": "Neural Logic Programming",
+      "B": "Natural Language Processing",
+      "C": "Network Layer Protocol",
+      "D": "Non-Linear Programming"
+    },
+    "correct_answer": "B"
+  },
+  {
+    "id": 7,
+    "text": "Which of these is an application of AI?",
+    "options": {
+      "A": "Voice Assistants",
+      "B": "Image Recognition",
+      "C": "Recommendation Systems",
+      "D": "All of the above"
+    },
+    "correct_answer": "D"
+  },
+  {
+    "id": 8,
+    "text": "What is deep learning based on?",
+    "options": {
+      "A": "Decision Trees",
+      "B": "Neural Networks",
+      "C": "Linear Regression",
+      "D": "K-Means Clustering"
+    },
+    "correct_answer": "B"
+  },
+  {
+    "id": 9,
+    "text": "Which company developed AlphaGo?",
+    "options": {
+      "A": "Google",
+      "B": "OpenAI",
+      "C": "DeepMind",
+      "D": "IBM"
+    },
+    "correct_answer": "C"
+  },
+  {
+    "id": 10,
+    "text": "What is the main goal of AI?",
+    "options": {
+      "A": "Replace all human jobs",
+      "B": "Create intelligent machines",
+      "C": "Build faster computers",
+      "D": "Develop new programming languages"
+    },
+    "correct_answer": "B"
+  },
+  {
+    "id": 11,
+    "text": "Explain the difference between supervised and unsupervised learning with examples.",
+    "options": {
+      "A": "Supervised uses labeled data, unsupervised finds patterns in unlabeled data",
+      "B": "Both use labeled data",
+      "C": "Both use unlabeled data",
+      "D": "There is no difference"
+    },
+    "correct_answer": "A"
+  },
+  {
+    "id": 12,
+    "text": "What is overfitting in machine learning?",
+    "options": {
+      "A": "Model performs well on training and test data",
+      "B": "Model learns training data too well including noise",
+      "C": "Model is too simple",
+      "D": "Model has too few parameters"
+    },
+    "correct_answer": "B"
+  },
+  {
+    "id": 13,
+    "text": "What is the role of activation functions in neural networks?",
+    "options": {
+      "A": "They speed up training",
+      "B": "They introduce non-linearity",
+      "C": "They reduce memory usage",
+      "D": "They normalize data"
+    },
+    "correct_answer": "B"
+  },
+  {
+    "id": 14,
+    "text": "What is gradient descent?",
+    "options": {
+      "A": "A data preprocessing technique",
+      "B": "An optimization algorithm that minimizes loss function",
+      "C": "A type of neural network",
+      "D": "A data visualization method"
+    },
+    "correct_answer": "B"
+  },
+  {
+    "id": 15,
+    "text": "Discuss the ethical implications of AI in society.",
+    "options": {
+      "A": "AI has no ethical implications",
+      "B": "AI raises concerns about bias, privacy, and job displacement",
+      "C": "AI is only beneficial",
+      "D": "AI ethics is not important"
+    },
+    "correct_answer": "B"
+  }
+]
