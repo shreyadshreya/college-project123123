@@ -525,15 +525,11 @@ export default function Exam() {
           question_id: parseInt(qId),
           answer: ans.trim(),
         }));
-      const result = await api.submitExam(studentRegNo, answerList);
-      sessionStorage.setItem('examResult', JSON.stringify(result));
+      await api.submitExam(studentRegNo, answerList);
       setExamState(STATE.FINISHED);
-      speak(
-        result.pending_evaluation
-          ? 'Exam submitted. Your answers will be evaluated by your teacher.'
-          : `Exam submitted. Your score is ${result.score} percent.`
-      );
-      setTimeout(() => navigate('/results'), 2500);
+      setSubmitting(false);
+      speak('Exam submitted successfully. Thank you.');
+      setTimeout(() => navigate('/'), 5000);
     } catch (err) {
       setError(err.message);
       setSubmitting(false);
@@ -621,6 +617,20 @@ export default function Exam() {
   }, [currentIndex, questions, answers, loading, submitting]);
 
   // ---- Render ----
+
+  if (examState === STATE.FINISHED) {
+    return (
+      <div className="card" style={{ textAlign: 'center' }}>
+        <h2>Exam Submitted</h2>
+        <p className="status-text">
+          Your exam has been submitted successfully. Thank you.
+        </p>
+        <button className="btn btn-primary" onClick={() => navigate('/')}>
+          Home
+        </button>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

@@ -41,18 +41,18 @@ async function apiCall(endpoint, options = {}) {
 
 export const api = {
   // Admin
-  uploadPdf: (file) => {
+  uploadPdf: (file, save = true) => {
     const formData = new FormData();
     formData.append('file', file);
-    return apiCall('/admin/upload-pdf', { method: 'POST', body: formData });
+    const query = save ? '' : '?save=false';
+    return apiCall(`/admin/upload-pdf${query}`, { method: 'POST', body: formData });
   },
   getQuestions: () => apiCall('/admin/questions'),
-  deleteQuestions: () => apiCall('/admin/questions', { method: 'DELETE' }),
-  getResults: () => apiCall('/admin/results'),
-  gradeResult: (index, score, feedback) => apiCall(`/admin/results/${index}/grade`, {
-    method: 'POST',
-    body: JSON.stringify({ score, feedback }),
+  updateQuestions: (questions) => apiCall('/admin/questions', {
+    method: 'PUT',
+    body: JSON.stringify(questions),
   }),
+  deleteQuestions: () => apiCall('/admin/questions', { method: 'DELETE' }),
 
   // Auth
   login: (name, regNo) => apiCall('/auth/login', {
@@ -70,7 +70,6 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ reg_no: regNo, answers }),
   }),
-  getResult: (regNo) => apiCall(`/exam/result/${regNo}`),
 
   // Sample
   generateSamplePaper: () => apiCall('/sample/generate-ai-paper', { method: 'POST' }),

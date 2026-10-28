@@ -1,12 +1,11 @@
 import json
 import os
-from typing import Optional
-from models import Question, ExamResult
+from models import Question, SubmissionRecord
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 QUESTIONS_FILE = os.path.join(DATA_DIR, "questions.json")
-RESULTS_FILE = os.path.join(DATA_DIR, "results.json")
 STUDENTS_FILE = os.path.join(DATA_DIR, "students.json")
+SUBMISSIONS_FILE = os.path.join(DATA_DIR, "submissions.json")
 
 
 def ensure_data_dir():
@@ -34,26 +33,26 @@ def clear_questions():
         os.remove(QUESTIONS_FILE)
 
 
-def load_results() -> list[ExamResult]:
+def load_submissions() -> list[SubmissionRecord]:
     ensure_data_dir()
-    if not os.path.exists(RESULTS_FILE):
+    if not os.path.exists(SUBMISSIONS_FILE):
         return []
-    with open(RESULTS_FILE, "r", encoding="utf-8") as f:
+    with open(SUBMISSIONS_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
-    return [ExamResult(**r) for r in data]
+    return [SubmissionRecord(**record) for record in data]
 
 
-def save_result(result: ExamResult):
+def save_submission(submission: SubmissionRecord):
     ensure_data_dir()
-    results = load_results()
-    results.append(result)
-    save_results(results)
-
-
-def save_results(results: list[ExamResult]):
-    ensure_data_dir()
-    with open(RESULTS_FILE, "w", encoding="utf-8") as f:
-        json.dump([r.model_dump() for r in results], f, indent=2, ensure_ascii=False)
+    submissions = load_submissions()
+    submissions.append(submission)
+    with open(SUBMISSIONS_FILE, "w", encoding="utf-8") as f:
+        json.dump(
+            [record.model_dump() for record in submissions],
+            f,
+            indent=2,
+            ensure_ascii=False,
+        )
 
 
 def load_students() -> list[dict]:

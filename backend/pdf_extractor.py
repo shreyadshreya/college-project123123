@@ -1,4 +1,4 @@
-"""Extract exam questions from text-based or scanned PDF question papers.
+"""Extract exam questions from PDF, JPG, JPEG and PNG question papers.
 
 The parser is line based and deliberately conservative:
 
@@ -9,19 +9,23 @@ The parser is line based and deliberately conservative:
 * Options may be inline (all on the question line) or on separate lines,
   optionally wrapped over several lines.
 * Answer lines ("Ans: B") and a separate answer key are both supported.
-* Scanned pages are OCR'd with RapidOCR when it is installed.
+* Text PDF pages are read with PyMuPDF; scanned PDF pages and image files
+  are OCR'd with RapidOCR when it is installed.
 """
 
+import io
 import re
 import unicodedata
 from collections import defaultdict
+from pathlib import Path
 
 import fitz  # PyMuPDF
+from PIL import Image, ImageOps
 from models import Question
 
 
 class PDFExtractionError(Exception):
-    """The PDF could not be read, or OCR is needed but unavailable."""
+    """The document could not be read, or OCR is needed but unavailable."""
 
 
 # ---------------------------------------------------------------------------
@@ -355,23 +359,22 @@ def _split_ocr_columns(items, page_width):
     ]
 
 
-def _ocr_page_lines(page) -> list[str]:
-    """OCR a scanned/image page and rebuild logical text lines."""
+def _ocr_engine_or_raise():
     try:
-        engine = _get_ocr_engine()
+        return _get_ocr_engine()
     except Exception as exc:  # ImportError or missing model files
         raise PDFExtractionError(
-            "This PDF appears to be scanned, but OCR is not available. "
+            "OCR is required for this file, but it is not available. "
             "Install its dependency with: pip install -r requirements.txt"
         ) from exc
 
-    pix = page.get_pixmap(dpi=300)
-    result, _ = engine(pix.tobytes("png"))
+
+def _ocr_result_to_lines(result, page_width: int, page_height: int) -> list[str]:
+    """Normalise RapidOCR output and rebuild logical text lines."""
     if not result:
         return []
 
-    page_width, page_height = pix.width, pix.height
-    items = []
+    raw_items = []
     for box, text, score in result:
         text = _clean_line(text)
         try:
@@ -383,17 +386,44 @@ def _ocr_page_lines(page) -> list[str]:
         x0 = min(point[0] for point in box)
         x1 = max(point[0] for point in box)
         y0 = min(point[1] for point in box)
-        # Drop marks/CO/level cells printed in the far right table columns.
-        # (Question/option text in a right-hand column starts well left of
-        # this margin, so two-column papers are unaffected.)
-        if x0 > page_width * 0.72:
-            compact = text.strip(" .:;|")
+        raw_items.append({
+            "x0": x0,
+            "x1": x1,
+            "x": x0,
+            "y": y0,
+            "text": text,
+        })
+
+    if not raw_items:
+        return []
+
+    # Marks/CO/level side columns only exist on exam tables.  Applying the
+    # right-margin filter to every image can remove short option text (for
+    # example "D) OS") from tightly cropped screenshots.
+    blob = " ".join(item["text"].lower() for item in raw_items)
+    table_markers = (
+        r"\bmarks?\b",
+        r"\bco\b",
+        r"\blevel\b",
+        r"\bq\.?\s*no\b",
+    )
+    has_table_columns = sum(
+        1 for marker in table_markers if re.search(marker, blob)
+    ) >= 2
+
+    items = []
+    for item in raw_items:
+        if has_table_columns and item["x0"] > page_width * 0.72:
+            # Drop marks/CO/level cells printed in the far right table
+            # columns.  Question/option text in a right-hand column starts
+            # well left of this margin, so two-column papers are unaffected.
+            compact = item["text"].strip(" .:;|")
             words = re.findall(r"[a-z]+", compact.lower())
             if re.fullmatch(r"[\dA-Za-z]{1,3}", compact) or (
                 words and all(word in NOISE_WORDS for word in words)
             ):
                 continue
-        items.append({"x0": x0, "x1": x1, "x": x0, "y": y0, "text": text})
+        items.append(item)
 
     if not items:
         return []
@@ -460,6 +490,87 @@ def _ocr_page_lines(page) -> list[str]:
             prev_y = row["y"]
 
     return lines
+
+
+def _ocr_page_lines(page) -> list[str]:
+    """OCR a scanned/image PDF page and rebuild logical text lines."""
+    engine = _ocr_engine_or_raise()
+    pix = page.get_pixmap(dpi=300)
+    try:
+        result, _ = engine(pix.tobytes("png"))
+    except Exception as exc:
+        raise PDFExtractionError(f"OCR failed on this page: {exc}") from exc
+    return _ocr_result_to_lines(result, pix.width, pix.height)
+
+
+def _prepare_image(content: bytes) -> tuple[bytes, int, int]:
+    """Validate an image, honour EXIF rotation and normalise its size."""
+    try:
+        with Image.open(io.BytesIO(content)) as original:
+            image = ImageOps.exif_transpose(original)
+            # Transparent PNG screenshots should be flattened onto white,
+            # otherwise OCR sees transparent pixels as black.
+            if image.mode in ("RGBA", "LA") or (
+                image.mode == "P" and "transparency" in image.info
+            ):
+                rgba = image.convert("RGBA")
+                background = Image.new("RGB", rgba.size, "white")
+                background.paste(rgba, mask=rgba.getchannel("A"))
+                image = background
+            else:
+                image = image.convert("RGB")
+
+            width, height = image.size
+            # OCR works best when the page is about 2000 px wide.  Upscale
+            # small screenshots and downscale very large phone photos so the
+            # longest side stays within 4000 px.
+            scale = 2000 / width if width < 2000 else 1.0
+            if max(width, height) * scale > 4000:
+                scale = 4000 / max(width, height)
+            if scale != 1.0:
+                image = image.resize(
+                    (max(1, round(width * scale)), max(1, round(height * scale))),
+                    Image.LANCZOS,
+                )
+                width, height = image.size
+
+            output = io.BytesIO()
+            image.save(output, format="PNG")
+            return output.getvalue(), width, height
+    except Exception as exc:
+        raise PDFExtractionError(
+            "The image could not be read. It may be corrupt or in an "
+            "unsupported image format."
+        ) from exc
+
+
+# Slightly more sensitive detection recovers faint/wrapped lines from
+# screenshots.  The defaults are restored afterwards so scanned PDF pages
+# keep their existing OCR behaviour.
+IMAGE_OCR_OPTIONS = {
+    "box_thresh": 0.3,
+    "unclip_ratio": 1.8,
+    "text_score": 0.3,
+}
+
+
+def _ocr_image_lines(content: bytes) -> list[str]:
+    """OCR an uploaded JPG/PNG image and rebuild logical text lines."""
+    prepared, width, height = _prepare_image(content)
+    engine = _ocr_engine_or_raise()
+    detector = engine.text_detector.postprocess_op
+    previous = (
+        detector.box_thresh,
+        detector.unclip_ratio,
+        engine.text_score,
+    )
+    try:
+        result, _ = engine(prepared, **IMAGE_OCR_OPTIONS)
+    except Exception as exc:
+        raise PDFExtractionError(f"OCR failed on the image: {exc}") from exc
+    finally:
+        detector.box_thresh, detector.unclip_ratio, engine.text_score = previous
+    return _ocr_result_to_lines(result, width, height)
 
 
 # ---------------------------------------------------------------------------
@@ -757,3 +868,32 @@ def get_pdf_text_preview(pdf_path: str, limit: int = 1200) -> str:
         return ""
     finally:
         doc.close()
+
+
+def extract_questions_from_image(image_path: str) -> list[Question]:
+    """
+    Extract questions, options and answers from a JPG/JPEG/PNG image.
+
+    The whole image is OCR'd, which supports multiple questions in one
+    screenshot or photographed question paper.
+
+    Raises PDFExtractionError for unreadable images or when OCR is
+    unavailable.
+    """
+    try:
+        content = Path(image_path).read_bytes()
+    except OSError as exc:
+        raise PDFExtractionError(f"Could not read the image: {exc}") from exc
+    if not content:
+        raise PDFExtractionError("The image file is empty")
+    return _parse_questions(_ocr_image_lines(content))
+
+
+def get_image_text_preview(image_path: str, limit: int = 1200) -> str:
+    """Return a short OCR text preview for image error messages."""
+    try:
+        content = Path(image_path).read_bytes()
+        lines = _ocr_image_lines(content)
+    except (OSError, PDFExtractionError):
+        return ""
+    return _normalise_text("\n".join(lines))[:limit]

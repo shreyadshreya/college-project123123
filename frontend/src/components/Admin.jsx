@@ -7,13 +7,11 @@ export default function Admin() {
   const [previewUrl, setPreviewUrl] = useState(null);
   const [dragging, setDragging] = useState(false);
   const [questions, setQuestions] = useState([]);
-  const [results, setResults] = useState([]);
-  const [gradeDrafts, setGradeDrafts] = useState({});
-  const [gradingIndex, setGradingIndex] = useState(null);
-  const [gradeMessage, setGradeMessage] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [editingQuestions, setEditingQuestions] = useState(null);
+  const [savingEdits, setSavingEdits] = useState(false);
   const fileInputRef = useRef(null);
   const { speak } = useTTS();
 
@@ -26,14 +24,15 @@ export default function Admin() {
 
   const selectFile = (f) => {
     if (!f) return;
-    if (!f.name.toLowerCase().endsWith('.pdf')) {
+    if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) {
       setFile(null);
       setPreviewUrl(null);
-      setError('Please select a PDF file (.pdf).');
+      setError('Please select a PDF, JPG, JPEG, or PNG file.');
       return;
     }
     setError('');
     setMessage('');
+    setEditingQuestions(null);
     setFile(f);
     setPreviewUrl(URL.createObjectURL(f));
   };
@@ -52,7 +51,6 @@ export default function Admin() {
 
   useEffect(() => {
     loadQuestions();
-    loadResults();
   }, []);
 
   const loadQuestions = async () => {
@@ -64,62 +62,30 @@ export default function Admin() {
     }
   };
 
-  const loadResults = async () => {
-    try {
-      const data = await api.getResults();
-      setResults(data.results || []);
-    } catch (err) {
-      console.error('Failed to load results:', err);
-    }
-  };
-
-  const updateGradeDraft = (index, field, value) => {
-    setGradeDrafts((prev) => ({
-      ...prev,
-      [index]: { ...prev[index], [field]: value },
-    }));
-  };
-
-  const handleGrade = async (index) => {
-    const draft = gradeDrafts[index] || {};
-    const score = Number(draft.score);
-
-    if (draft.score === undefined || draft.score === '' || Number.isNaN(score) || score < 0 || score > 100) {
-      setError('Please enter a score between 0 and 100.');
-      return;
-    }
-
-    setGradingIndex(index);
-    setError('');
-    setGradeMessage('');
-    try {
-      const updated = await api.gradeResult(index, score, draft.feedback || '');
-      setResults((prev) => prev.map((r, i) => (i === index ? updated : r)));
-      setGradeMessage(`Grade saved: ${updated.name} scored ${updated.score}%.`);
-      speak(`Grade saved. ${updated.name} scored ${updated.score} percent.`);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setGradingIndex(null);
-    }
-  };
-
   const handleUpload = async () => {
     if (!file) {
-      setError('Please select a PDF file first');
+      setError('Please select a question paper file first');
       return;
     }
     setLoading(true);
     setError('');
     setMessage('');
+    setEditingQuestions(null);
     try {
-      const data = await api.uploadPdf(file);
-      setQuestions(data.questions || []);
-      setMessage(data.message);
-      speak(`Successfully extracted ${data.count} questions from the PDF.`);
+      // Extract for review first; the current paper is only replaced when
+      // the administrator clicks "Save Questions".
+      const data = await api.uploadPdf(file, false);
+      setEditingQuestions(
+        (data.questions || []).map((q) => ({ ...q, options: { ...q.options } }))
+      );
+      setMessage(
+        `${data.count} questions extracted. Review and correct them below, ` +
+        'then click Save Questions.'
+      );
+      speak(`Extracted ${data.count} questions. Review them and save when ready.`);
     } catch (err) {
       setError(err.message);
-      speak('Failed to extract questions from the PDF.');
+      speak('Failed to extract questions from the uploaded file.');
     } finally {
       setLoading(false);
     }
@@ -130,6 +96,7 @@ export default function Admin() {
     try {
       await api.deleteQuestions();
       setQuestions([]);
+      setEditingQuestions(null);
       setMessage('All questions deleted');
       speak('All questions have been deleted.');
     } catch (err) {
@@ -141,6 +108,7 @@ export default function Admin() {
     setLoading(true);
     setError('');
     setMessage('');
+    setEditingQuestions(null);
     try {
       const data = await api.generateSamplePaper();
       setQuestions(data.questions || []);
@@ -154,6 +122,66 @@ export default function Admin() {
     }
   };
 
+  const startEditing = () => {
+    setEditingQuestions(
+      questions.map((q) => ({ ...q, options: { ...q.options } }))
+    );
+    setError('');
+    setMessage('');
+  };
+
+  const updateEditedQuestion = (index, field, value) => {
+    setEditingQuestions((prev) => prev.map((q, i) => (
+      i === index ? { ...q, [field]: value } : q
+    )));
+  };
+
+  const updateEditedOption = (index, letter, value) => {
+    setEditingQuestions((prev) => prev.map((q, i) => (
+      i === index ? { ...q, options: { ...q.options, [letter]: value } } : q
+    )));
+  };
+
+  const addEditingQuestion = () => {
+    setEditingQuestions((prev) => {
+      const nextId = prev.reduce(
+        (max, q) => Math.max(max, Number(q.id) || 0),
+        0
+      ) + 1;
+      return [
+        ...prev,
+        {
+          id: nextId,
+          text: '',
+          options: { A: '', B: '', C: '', D: '' },
+          correct_answer: null,
+        },
+      ];
+    });
+  };
+
+  const removeEditingQuestion = (index) => {
+    setEditingQuestions((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSaveEdits = async () => {
+    setSavingEdits(true);
+    setError('');
+    setMessage('');
+    try {
+      const data = await api.updateQuestions(editingQuestions);
+      setQuestions(data.questions || []);
+      setEditingQuestions(null);
+      setMessage(data.message);
+      speak(`Saved corrections to ${data.count} questions.`);
+    } catch (err) {
+      setError(err.message);
+      speak('Failed to save question corrections.');
+    } finally {
+      setSavingEdits(false);
+    }
+  };
+
   const formatFileSize = (bytes) => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -164,7 +192,7 @@ export default function Admin() {
     <div className="card" style={{ maxWidth: '800px' }}>
       <h2>Admin Panel</h2>
       <p style={{ textAlign: 'center', color: '#aaa', marginBottom: '1.5rem' }}>
-        Upload a PDF question paper to auto-extract questions
+        Upload a PDF or image question paper to auto-extract questions
       </p>
 
       <div
@@ -183,25 +211,36 @@ export default function Admin() {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".pdf,application/pdf"
+            accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
             onChange={handleFileChange}
           />
-          <span style={{ fontSize: '2rem' }}>PDF</span>
-          <span>{file ? file.name : 'Drag & drop your PDF here, or click to select'}</span>
+          <span style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>PDF / JPG / PNG</span>
+          <span>{file ? file.name : 'Drag & drop a question paper here, or click to select'}</span>
         </label>
       </div>
 
       {file && previewUrl && (
         <div style={{ marginBottom: '1.5rem' }}>
-          <h3 style={{ marginBottom: '0.75rem', textAlign: 'center' }}>PDF Preview</h3>
+          <h3 style={{ marginBottom: '0.75rem', textAlign: 'center' }}>
+            {/\.(jpe?g|png)$/i.test(file.name) ? 'Image Preview' : 'PDF Preview'}
+          </h3>
           <p style={{ textAlign: 'center', color: '#aaa', marginBottom: '0.75rem' }}>
             {file.name} ({formatFileSize(file.size)})
           </p>
-          <iframe
-            src={previewUrl}
-            title="PDF preview"
-            className="pdf-preview"
-          />
+          {/\.(jpe?g|png)$/i.test(file.name) ? (
+            <img
+              src={previewUrl}
+              alt="Question paper preview"
+              className="pdf-preview"
+              style={{ objectFit: 'contain' }}
+            />
+          ) : (
+            <iframe
+              src={previewUrl}
+              title="PDF preview"
+              className="pdf-preview"
+            />
+          )}
         </div>
       )}
 
@@ -215,7 +254,7 @@ export default function Admin() {
           disabled={loading || !file}
           style={{ flex: 1, minWidth: '150px' }}
         >
-          {loading ? 'Saving...' : 'Save PDF & Extract'}
+          {loading ? 'Extracting...' : 'Upload & Extract'}
         </button>
         <button
           className="btn btn-secondary"
@@ -235,11 +274,159 @@ export default function Admin() {
         </button>
       </div>
 
-      {questions.length > 0 && (
+      {editingQuestions ? (
         <>
-          <h3 style={{ marginBottom: '1rem' }}>
-            Extracted Questions ({questions.length})
-          </h3>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1rem',
+            flexWrap: 'wrap',
+            marginBottom: '0.5rem',
+          }}>
+            <h3 style={{ margin: 0 }}>
+              Review & Correct Questions ({editingQuestions.length})
+            </h3>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={addEditingQuestion}
+              disabled={savingEdits}
+            >
+              + Add Question
+            </button>
+          </div>
+          <p style={{ color: '#aaa', marginBottom: '1rem' }}>
+            Fix any OCR mistakes, add missing questions or options, and set
+            answers you can verify. Leave an answer blank if it is not known.
+            Nothing is saved until you click Save Questions.
+          </p>
+          <div className="questions-list">
+            {editingQuestions.map((q, index) => (
+              <div key={q.id} className="question-item">
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '1rem',
+                  marginBottom: '0.35rem',
+                }}>
+                  <span style={{ color: '#aaa', fontSize: '0.9rem' }}>
+                    Question {index + 1}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-danger"
+                    onClick={() => removeEditingQuestion(index)}
+                    disabled={savingEdits}
+                    style={{
+                      padding: '0.25rem 0.65rem',
+                      fontSize: '0.8rem',
+                      flex: '0 0 auto',
+                    }}
+                  >
+                    Remove
+                  </button>
+                </div>
+                <label style={{ display: 'block', color: '#aaa', fontSize: '0.9rem' }}>
+                  Question text
+                  <textarea
+                    className="input-field"
+                    rows={2}
+                    value={q.text}
+                    onChange={(e) => updateEditedQuestion(index, 'text', e.target.value)}
+                    style={{ marginTop: '0.35rem', resize: 'vertical' }}
+                  />
+                </label>
+                <div style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: '0.5rem',
+                  marginTop: '0.5rem',
+                }}>
+                  {['A', 'B', 'C', 'D'].map((letter) => (
+                    <label
+                      key={letter}
+                      style={{
+                        flex: '1 1 45%',
+                        minWidth: '160px',
+                        color: '#aaa',
+                        fontSize: '0.9rem',
+                      }}
+                    >
+                      {letter})
+                      <input
+                        className="input-field"
+                        value={q.options?.[letter] || ''}
+                        onChange={(e) => updateEditedOption(index, letter, e.target.value)}
+                        style={{ marginTop: '0.25rem', marginBottom: 0 }}
+                      />
+                    </label>
+                  ))}
+                </div>
+                <label style={{
+                  display: 'block',
+                  marginTop: '0.75rem',
+                  color: '#aaa',
+                  fontSize: '0.9rem',
+                }}>
+                  Correct answer
+                  <select
+                    className="input-field"
+                    value={q.correct_answer || ''}
+                    onChange={(e) => updateEditedQuestion(index, 'correct_answer', e.target.value)}
+                    style={{ marginTop: '0.25rem', marginBottom: 0 }}
+                  >
+                    <option value="">Not identified / descriptive</option>
+                    {['A', 'B', 'C', 'D'].map((letter) => (
+                      <option key={letter} value={letter}>{letter}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            ))}
+          </div>
+          <div style={{
+            display: 'flex',
+            gap: '1rem',
+            marginTop: '1rem',
+            flexWrap: 'wrap',
+          }}>
+            <button
+              className="btn btn-primary"
+              onClick={handleSaveEdits}
+              disabled={savingEdits || editingQuestions.length === 0}
+              style={{ flex: 1, minWidth: '150px' }}
+            >
+              {savingEdits ? 'Saving...' : 'Save Questions'}
+            </button>
+            <button
+              className="btn btn-secondary"
+              onClick={() => setEditingQuestions(null)}
+              disabled={savingEdits}
+              style={{ flex: 1, minWidth: '150px' }}
+            >
+              Cancel
+            </button>
+          </div>
+        </>
+      ) : questions.length > 0 && (
+        <>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1rem',
+            flexWrap: 'wrap',
+            marginBottom: '1rem',
+          }}>
+            <h3 style={{ margin: 0 }}>
+              Extracted Questions ({questions.length})
+            </h3>
+            <button className="btn btn-secondary" onClick={startEditing}>
+              Review & Correct
+            </button>
+          </div>
           <div className="questions-list">
             {questions.map((q) => (
               <div key={q.id} className="question-item">
@@ -254,84 +441,21 @@ export default function Admin() {
                     <span style={{ color: '#ffd43b' }}>Descriptive question (voice answer)</span>
                   )}
                 </div>
-                {q.correct_answer && (
-                  <div className="q-answer">Answer: {q.correct_answer}</div>
-                )}
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-
-      {results.length > 0 && (
-        <>
-          <h3 style={{ margin: '1.5rem 0 1rem' }}>
-            Submissions ({results.length})
-          </h3>
-          {gradeMessage && <p className="success-text">{gradeMessage}</p>}
-          <div className="questions-list">
-            {results.map((r, idx) => (
-              <div key={`${r.reg_no}-${idx}`} className="question-item">
-                <div className="q-text">
-                  {r.name} ({r.reg_no}) —{' '}
-                  {r.pending_evaluation
-                    ? 'Pending evaluation'
-                    : `Score: ${r.score}%`}
-                </div>
-                {r.details.map((d) => (
-                  <div
-                    key={d.question_id}
-                    style={{ marginTop: '0.5rem', fontSize: '0.9rem', color: '#aaa' }}
-                  >
-                    <strong>Q{d.question_id}.</strong> {d.question}
-                    <div style={{ color: '#00d2ff' }}>
-                      Answer: {d.student_answer}
+                {Object.keys(q.options).length > 0 && (
+                  q.correct_answer ? (
+                    <div className="q-answer">Answer: {q.correct_answer}</div>
+                  ) : (
+                    <div className="q-answer" style={{ color: '#ffd43b' }}>
+                      Answer not identified — use Review & Correct to set it.
                     </div>
-                  </div>
-                ))}
-
-                {r.mode !== 'mcq' && r.pending_evaluation && (
-                  <div className="grade-form-row">
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="1"
-                      className="input-field"
-                      placeholder="Score %"
-                      aria-label={`Score for ${r.name}`}
-                      value={gradeDrafts[idx]?.score ?? ''}
-                      onChange={(e) => updateGradeDraft(idx, 'score', e.target.value)}
-                    />
-                    <input
-                      type="text"
-                      className="input-field"
-                      placeholder="Feedback (optional)"
-                      aria-label={`Feedback for ${r.name}`}
-                      value={gradeDrafts[idx]?.feedback ?? ''}
-                      onChange={(e) => updateGradeDraft(idx, 'feedback', e.target.value)}
-                    />
-                    <button
-                      className="btn btn-primary"
-                      onClick={() => handleGrade(idx)}
-                      disabled={gradingIndex === idx}
-                    >
-                      {gradingIndex === idx ? 'Saving...' : 'Save Grade'}
-                    </button>
-                  </div>
-                )}
-
-                {r.mode !== 'mcq' && !r.pending_evaluation && (
-                  <div className="q-answer">
-                    Graded: {r.score}%
-                    {r.teacher_feedback ? ` — ${r.teacher_feedback}` : ''}
-                  </div>
+                  )
                 )}
               </div>
             ))}
           </div>
         </>
       )}
+
     </div>
   );
 }

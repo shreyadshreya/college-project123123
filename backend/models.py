@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import Optional
 
 
@@ -24,20 +24,9 @@ class ExamSubmission(BaseModel):
     answers: list[ExamAnswer]
 
 
-class ExamResult(BaseModel):
+class SubmissionRecord(BaseModel):
     reg_no: str
     name: str
+    submitted_at: str
     total_questions: int
-    correct: int
-    score: float
-    details: list[dict]
-    mode: str = "mcq"  # "mcq" | "descriptive" | "mixed"
-    pending_evaluation: bool = False
-    graded: bool = False
-    teacher_feedback: Optional[str] = None
-    graded_at: Optional[str] = None
-
-
-class GradeSubmission(BaseModel):
-    score: float = Field(ge=0, le=100)
-    feedback: Optional[str] = None
+    answers: list[ExamAnswer]

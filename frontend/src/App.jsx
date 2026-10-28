@@ -1,8 +1,7 @@
-import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom';
 import Login from './components/Login';
 import Admin from './components/Admin';
 import Exam from './components/Exam';
-import Results from './components/Results';
 
 function App() {
   return (
@@ -14,7 +13,6 @@ function App() {
             <NavLink to="/" end>Home</NavLink>
             <NavLink to="/admin">Admin</NavLink>
             <NavLink to="/exam">Exam</NavLink>
-            <NavLink to="/results">Results</NavLink>
           </nav>
         </nav>
         <main className="page">
@@ -22,7 +20,7 @@ function App() {
             <Route path="/" element={<Login />} />
             <Route path="/admin" element={<Admin />} />
             <Route path="/exam" element={<Exam />} />
-            <Route path="/results" element={<Results />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
       </div>

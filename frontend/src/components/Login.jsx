@@ -8,6 +8,10 @@ const LOGIN_COMMANDS = [
   'proceed', 'yes', 'done', 'ok', 'okay', 'submit',
 ];
 
+// Keep this in sync with the backend. The existing records do not share a
+// single length/prefix, so only the common compact letter/digit rule is used.
+const REG_NO_RE = /^[A-Z0-9]+$/;
+
 export default function Login() {
   const navigate = useNavigate();
   const [name, setName] = useState('');
@@ -91,12 +95,27 @@ export default function Login() {
   }
 
   const handleLogin = async (loginName = name, loginRegNo = regNo) => {
+    // Stop the microphone before showing/speaking any result.
+    stopListening();
     const finalName = (loginName || '').trim();
-    const finalRegNo = (loginRegNo || '').trim();
+    const finalRegNo = (loginRegNo || '').trim().toUpperCase();
 
-    if (!finalName || !finalRegNo) {
-      setError('Please fill in both name and registration number');
-      speak('Please provide both your name and registration number.');
+    if (!finalName) {
+      setError('Please enter your full name.');
+      setVoiceStatus('Login failed. Please check your name and registration number.');
+      speak('Login failed. Please enter your full name.');
+      return;
+    }
+    if (!finalRegNo) {
+      setError('Please enter your registration number.');
+      setVoiceStatus('Login failed. Please check your name and registration number.');
+      speak('Login failed. Please enter your registration number.');
+      return;
+    }
+    if (!REG_NO_RE.test(finalRegNo)) {
+      setError('Registration number must contain only letters and digits.');
+      setVoiceStatus('Login failed. Please check your name and registration number.');
+      speak('Login failed. Registration number must contain only letters and digits.');
       return;
     }
     if (loading) return;
@@ -105,7 +124,10 @@ export default function Login() {
     setError('');
     try {
       const result = await api.login(finalName, finalRegNo);
+      // Use the registered record's spelling, not whatever was typed/spoken.
       sessionStorage.setItem('student', JSON.stringify(result));
+      setName(result.name);
+      setRegNo(result.reg_no);
       setVoiceStatus('Login successful. Redirecting to exam...');
       let navigated = false;
       const goToExam = () => {
@@ -113,12 +135,15 @@ export default function Login() {
         navigated = true;
         navigate('/exam');
       };
-      speak(`Welcome, ${finalName}! Redirecting to exam.`, goToExam);
+      speak(`Welcome, ${result.name}! Redirecting to exam.`, goToExam);
       setTimeout(goToExam, 4000);
     } catch (err) {
-      setError(err.message);
-      setVoiceStatus('Login failed. Please try again.');
-      speak('Login failed. Please try again.');
+      const message =
+        err.message ||
+        'Login failed. The full name and registration number do not match a registered student.';
+      setError(message);
+      setVoiceStatus('Login failed. Please check your name and registration number.');
+      speak(message.startsWith('Login failed') ? message : `Login failed. ${message}`);
       setLoading(false);
     }
   };
@@ -195,7 +220,7 @@ export default function Login() {
         />
       </div>
 
-      {error && <p className="error-text">{error}</p>}
+      {error && <p className="error-text" role="alert">{error}</p>}
 
       <button
         className="btn btn-primary"
