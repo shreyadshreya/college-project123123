@@ -1,16 +1,41 @@
 const BASE_URL = '/api';
 
+function formatErrorDetail(detail) {
+  if (!detail) return 'Request failed';
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => item?.msg || item?.message || JSON.stringify(item))
+      .join('; ');
+  }
+  if (typeof detail === 'string') return detail;
+  return JSON.stringify(detail);
+}
+
 async function apiCall(endpoint, options = {}) {
   const url = `${BASE_URL}${endpoint}`;
-  const config = {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  };
-  const response = await fetch(url, config);
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Request failed' }));
-    throw new Error(error.detail || 'Request failed');
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+
+  const headers = { ...(options.headers || {}) };
+  // Never set Content-Type for FormData: the browser must add the
+  // multipart/form-data boundary itself, otherwise FastAPI cannot parse it.
+  if (options.body && !isFormData && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
   }
+
+  const response = await fetch(url, { ...options, headers });
+
+  if (!response.ok) {
+    const raw = await response.text();
+    let detail = raw;
+    try {
+      const parsed = JSON.parse(raw);
+      detail = parsed.detail ?? raw;
+    } catch {
+      // Keep the raw response text (e.g. an HTML error page).
+    }
+    throw new Error(formatErrorDetail(detail) || `Request failed (${response.status})`);
+  }
+
   return response.json();
 }
 

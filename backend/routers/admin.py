@@ -1,9 +1,15 @@
 import os
 import tempfile
 from datetime import datetime, timezone
-import fitz
+from pathlib import Path
+
 from fastapi import APIRouter, UploadFile, File, HTTPException
-from pdf_extractor import extract_questions_from_pdf
+
+from pdf_extractor import (
+    PDFExtractionError,
+    extract_questions_from_pdf,
+    get_pdf_text_preview,
+)
 from models import GradeSubmission
 from database import (
     save_questions,
@@ -15,33 +21,56 @@ from database import (
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB
+
 
 @router.post("/upload-pdf")
 async def upload_pdf(file: UploadFile = File(...)):
-    """Upload a PDF question paper and extract questions using AI (PyMuPDF)."""
-    if not file.filename.endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are allowed")
+    """Upload a PDF question paper and extract questions (text or OCR)."""
+    filename = file.filename or ""
+    if Path(filename).suffix.lower() != ".pdf":
+        raise HTTPException(status_code=400, detail="Only PDF files (.pdf) are allowed")
 
-    # Save uploaded file temporarily
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-        content = await file.read()
-        tmp.write(content)
-        tmp_path = tmp.name
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="The uploaded file is empty")
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"The PDF is too large (maximum {MAX_UPLOAD_BYTES // (1024 * 1024)} MB)",
+        )
+    if b"%PDF-" not in content[:1024]:
+        raise HTTPException(
+            status_code=400,
+            detail="The uploaded file is not a valid PDF (missing PDF header)",
+        )
 
+    tmp_path = None
     try:
-        questions = extract_questions_from_pdf(tmp_path)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        try:
+            questions = extract_questions_from_pdf(tmp_path)
+        except PDFExtractionError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
         if not questions:
-            # Include a raw text preview in the error for easier debugging
-            doc = fitz.open(tmp_path)
-            raw_text = "".join(page.get_text() for page in doc)
-            doc.close()
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    "No questions could be extracted from the PDF. Please check the format. "
-                    f"Raw text preview: {raw_text[:1000]}"
-                ),
-            )
+            preview = get_pdf_text_preview(tmp_path)
+            if preview:
+                detail = (
+                    "No questions could be extracted from this PDF. "
+                    "The text was readable, but no supported question format was found. "
+                    f"Extracted text preview: {preview}"
+                )
+            else:
+                detail = (
+                    "No questions could be extracted from this PDF. "
+                    "The PDF contains no extractable text. If it is a scanned paper, "
+                    "make sure OCR support is installed (see requirements.txt)."
+                )
+            raise HTTPException(status_code=422, detail=detail)
 
         clear_questions()
         save_questions(questions)
@@ -49,10 +78,21 @@ async def upload_pdf(file: UploadFile = File(...)):
         return {
             "message": f"Successfully extracted {len(questions)} questions",
             "count": len(questions),
-            "questions": [q.model_dump() for q in questions]
+            "questions": [q.model_dump() for q in questions],
         }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to process the PDF: {exc}",
+        ) from exc
     finally:
-        os.unlink(tmp_path)
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
 
 @router.get("/questions")

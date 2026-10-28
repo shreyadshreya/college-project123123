@@ -25,8 +25,17 @@ export default function Admin() {
   }, [previewUrl]);
 
   const selectFile = (f) => {
+    if (!f) return;
+    if (!f.name.toLowerCase().endsWith('.pdf')) {
+      setFile(null);
+      setPreviewUrl(null);
+      setError('Please select a PDF file (.pdf).');
+      return;
+    }
+    setError('');
+    setMessage('');
     setFile(f);
-    setPreviewUrl(f ? URL.createObjectURL(f) : null);
+    setPreviewUrl(URL.createObjectURL(f));
   };
 
   const handleFileChange = (e) => {
@@ -196,7 +205,7 @@ export default function Admin() {
         </div>
       )}
 
-      {error && <p className="error-text">{error}</p>}
+      {error && <p className="error-text" style={{ whiteSpace: 'pre-wrap' }}>{error}</p>}
       {message && <p className="success-text">{message}</p>}
 
       <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
