@@ -2,8 +2,9 @@ import os
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 
+from admin_auth import require_admin
 from pdf_extractor import (
     PDFExtractionError,
     extract_questions_from_image,
@@ -16,9 +17,15 @@ from database import (
     save_questions,
     clear_questions,
     load_questions,
+    load_results,
 )
+from submission_utils import normalise_submission
 
-router = APIRouter(prefix="/admin", tags=["Admin"])
+router = APIRouter(
+    prefix="/admin",
+    tags=["Admin"],
+    dependencies=[Depends(require_admin)],
+)
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB
 ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png"}
@@ -203,3 +210,31 @@ async def delete_all_questions():
     """Delete all questions."""
     clear_questions()
     return {"message": "All questions deleted"}
+
+
+@router.get("/submissions")
+async def get_all_submissions():
+    """
+    List all exam submissions (old and new formats) without question details.
+
+    Existing legacy records are normalised on read, so no existing result data
+    has to be rewritten.
+    """
+    records = load_results()
+    submissions = [
+        normalise_submission(record, index)
+        for index, record in reversed(list(enumerate(records)))
+    ]
+    return {"count": len(submissions), "submissions": submissions}
+
+
+@router.get("/submissions/{submission_id}")
+async def get_submission(submission_id: str):
+    """Return one submission including every saved answer and stored mark."""
+    records = load_results()
+    for index, record in enumerate(records):
+        normalised = normalise_submission(record, index, include_details=True)
+        if normalised["id"] == submission_id:
+            return {"submission": normalised}
+
+    raise HTTPException(status_code=404, detail="Submission not found")

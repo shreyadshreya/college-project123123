@@ -1,11 +1,11 @@
 import json
 import os
-from models import Question, SubmissionRecord
+from models import Question
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 QUESTIONS_FILE = os.path.join(DATA_DIR, "questions.json")
 STUDENTS_FILE = os.path.join(DATA_DIR, "students.json")
-SUBMISSIONS_FILE = os.path.join(DATA_DIR, "submissions.json")
+RESULTS_FILE = os.path.join(DATA_DIR, "results.json")
 
 
 def ensure_data_dir():
@@ -33,26 +33,27 @@ def clear_questions():
         os.remove(QUESTIONS_FILE)
 
 
-def load_submissions() -> list[SubmissionRecord]:
+def load_results() -> list[dict]:
+    """Load legacy and current result records without changing their shape."""
     ensure_data_dir()
-    if not os.path.exists(SUBMISSIONS_FILE):
+    if not os.path.exists(RESULTS_FILE):
         return []
-    with open(SUBMISSIONS_FILE, "r", encoding="utf-8") as f:
+    with open(RESULTS_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
-    return [SubmissionRecord(**record) for record in data]
+    return data if isinstance(data, list) else []
 
 
-def save_submission(submission: SubmissionRecord):
+def save_results(results: list[dict]):
     ensure_data_dir()
-    submissions = load_submissions()
-    submissions.append(submission)
-    with open(SUBMISSIONS_FILE, "w", encoding="utf-8") as f:
-        json.dump(
-            [record.model_dump() for record in submissions],
-            f,
-            indent=2,
-            ensure_ascii=False,
-        )
+    with open(RESULTS_FILE, "w", encoding="utf-8") as f:
+        json.dump(results, f, indent=2, ensure_ascii=False)
+
+
+def append_result(record: dict):
+    """Append a submission while preserving all existing result records."""
+    results = load_results()
+    results.append(record)
+    save_results(results)
 
 
 def load_students() -> list[dict]:

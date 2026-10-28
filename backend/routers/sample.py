@@ -1,8 +1,13 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from admin_auth import require_admin
 from models import Question
 from database import save_questions, clear_questions
 
-router = APIRouter(prefix="/sample", tags=["Sample"])
+router = APIRouter(
+    prefix="/sample",
+    tags=["Sample"],
+    dependencies=[Depends(require_admin)],
+)
 
 # Pre-defined AI question paper (40 marks)
 SAMPLE_QUESTIONS = [

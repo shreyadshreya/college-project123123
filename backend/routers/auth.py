@@ -3,8 +3,14 @@ import unicodedata
 
 from fastapi import APIRouter, HTTPException
 
+from admin_auth import (
+    ADMIN_USERNAME,
+    TOKEN_TTL_SECONDS,
+    authenticate_admin,
+    create_admin_token,
+)
 from database import load_students
-from models import StudentLogin
+from models import AdminLogin, StudentLogin
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -71,6 +77,27 @@ async def login(student: StudentLogin):
         "name": registered["name"],
         "reg_no": registered["reg_no"],
         "is_returning_student": True,
+    }
+
+
+@router.post("/admin-login")
+async def admin_login(admin: AdminLogin):
+    """Issue a short-lived bearer token for the configured admin account."""
+    username = (admin.username or "").strip()
+    password = admin.password or ""
+
+    if not authenticate_admin(username, password):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid admin username or password.",
+        )
+
+    return {
+        "message": "Admin login successful.",
+        "access_token": create_admin_token(),
+        "token_type": "bearer",
+        "expires_in": TOKEN_TTL_SECONDS,
+        "username": ADMIN_USERNAME,
     }
 
 

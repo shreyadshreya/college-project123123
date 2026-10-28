@@ -33,26 +33,53 @@ async function apiCall(endpoint, options = {}) {
     } catch {
       // Keep the raw response text (e.g. an HTML error page).
     }
-    throw new Error(formatErrorDetail(detail) || `Request failed (${response.status})`);
+    const error = new Error(formatErrorDetail(detail) || `Request failed (${response.status})`);
+    error.status = response.status;
+    throw error;
   }
 
   return response.json();
 }
 
+function adminHeaders(token) {
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export const api = {
   // Admin
-  uploadPdf: (file, save = true) => {
+  adminLogin: (username, password) => apiCall('/auth/admin-login', {
+    method: 'POST',
+    body: JSON.stringify({ username, password }),
+  }),
+  uploadPdf: (file, save = true, token) => {
     const formData = new FormData();
     formData.append('file', file);
     const query = save ? '' : '?save=false';
-    return apiCall(`/admin/upload-pdf${query}`, { method: 'POST', body: formData });
+    return apiCall(`/admin/upload-pdf${query}`, {
+      method: 'POST',
+      body: formData,
+      headers: adminHeaders(token),
+    });
   },
-  getQuestions: () => apiCall('/admin/questions'),
-  updateQuestions: (questions) => apiCall('/admin/questions', {
+  getQuestions: (token) => apiCall('/admin/questions', {
+    headers: adminHeaders(token),
+  }),
+  updateQuestions: (questions, token) => apiCall('/admin/questions', {
     method: 'PUT',
+    headers: adminHeaders(token),
     body: JSON.stringify(questions),
   }),
-  deleteQuestions: () => apiCall('/admin/questions', { method: 'DELETE' }),
+  deleteQuestions: (token) => apiCall('/admin/questions', {
+    method: 'DELETE',
+    headers: adminHeaders(token),
+  }),
+  getSubmissions: (token) => apiCall('/admin/submissions', {
+    headers: adminHeaders(token),
+  }),
+  getSubmission: (submissionId, token) => apiCall(
+    `/admin/submissions/${encodeURIComponent(submissionId)}`,
+    { headers: adminHeaders(token) },
+  ),
 
   // Auth
   login: (name, regNo) => apiCall('/auth/login', {
@@ -72,5 +99,8 @@ export const api = {
   }),
 
   // Sample
-  generateSamplePaper: () => apiCall('/sample/generate-ai-paper', { method: 'POST' }),
+  generateSamplePaper: (token) => apiCall('/sample/generate-ai-paper', {
+    method: 'POST',
+    headers: adminHeaders(token),
+  }),
 };
